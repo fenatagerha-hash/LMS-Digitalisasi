@@ -1,0 +1,1264 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 0: Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ---------------------------------------------------------
+    // Global Hardened Primitives
+    // ---------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedEmail() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerifiedEmail() && request.auth.token.email == 'fenatagerha@gmail.com';
+    }
+
+    function isAdminRole() {
+      return isBootstrappedAdmin() || (
+        isVerifiedEmail() &&
+        exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.isActive == true &&
+        get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role in ['super_admin', 'admin_kegiatan']
+      );
+    }
+
+    function isStaffRole() {
+      return isAdminRole() || (
+        isVerifiedEmail() &&
+        exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.isActive == true &&
+        get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == 'fasilitator'
+      );
+    }
+
+    function isSupervisorRole() {
+      return isVerifiedEmail() &&
+        exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.isActive == true &&
+        get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == 'pemantau';
+    }
+
+    function isMonitoringRole() {
+      return isStaffRole() || isSupervisorRole();
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidRole(role) {
+      return role in ['super_admin', 'admin_kegiatan', 'fasilitator', 'peserta', 'pemantau'];
+    }
+
+    function isBoundedStringList(arr, maxLen) {
+      return arr is list && arr.size() <= maxLen && (arr.size() == 0 || arr[0] is string);
+    }
+
+    function isBoundedIntList(arr, maxLen) {
+      return arr is list && arr.size() <= maxLen && (arr.size() == 0 || arr[0] is int);
+    }
+
+    // ---------------------------------------------------------
+    // Entity Validation Blueprints (Anti-Update-Gap)
+    // ---------------------------------------------------------
+    function isValidProfile(data, userId) {
+      return data.keys().hasAll([
+        'uid', 'fullName', 'email', 'phone', 'instansi',
+        'kabupatenKota', 'jabatan', 'role', 'isActive', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'uid', 'fullName', 'email', 'phone', 'instansi', 'npsn',
+        'kabupatenKota', 'jabatan', 'jenjangPendidikan', 'mataPelajaran', 'statusPeserta',
+        'role', 'isActive', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.uid) &&
+      data.uid == userId &&
+      data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 120 &&
+      data.email is string && data.email.size() >= 3 && data.email.size() <= 160 &&
+      data.phone is string && data.phone.size() <= 32 &&
+      data.instansi is string && data.instansi.size() <= 160 &&
+      (!('npsn' in data) || (data.npsn is string && data.npsn.size() <= 16 && data.npsn.matches('^[0-9]*$'))) &&
+      data.kabupatenKota is string && data.kabupatenKota.size() <= 120 &&
+      data.jabatan is string && data.jabatan.size() <= 120 &&
+      (!('jenjangPendidikan' in data) || (data.jenjangPendidikan is string && data.jenjangPendidikan.size() <= 80)) &&
+      (!('mataPelajaran' in data) || (data.mataPelajaran is string && data.mataPelajaran.size() <= 120)) &&
+      (!('statusPeserta' in data) || (data.statusPeserta is string && data.statusPeserta.size() <= 80)) &&
+      isValidRole(data.role) &&
+      data.isActive is bool &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidPublicProfile(data, userId) {
+      return data.keys().hasAll([
+        'uid', 'displayName', 'role', 'instansi', 'kabupatenKota', 'isActive', 'isPublic', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'uid', 'displayName', 'role', 'instansi', 'kabupatenKota', 'isActive', 'isPublic', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.uid) &&
+      data.uid == userId &&
+      data.displayName is string && data.displayName.size() >= 2 && data.displayName.size() <= 120 &&
+      isValidRole(data.role) &&
+      data.instansi is string && data.instansi.size() <= 160 &&
+      data.kabupatenKota is string && data.kabupatenKota.size() <= 120 &&
+      data.isActive is bool &&
+      data.isPublic is bool &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidTrainingProgram(data, trainingId) {
+      return data.keys().hasAll([
+        'id', 'code', 'name', 'description', 'organizer', 'startDate', 'endDate',
+        'location', 'quota', 'status', 'requireApproval', 'bannerUrl', 'scoreRanges',
+        'adminUids', 'facilitatorUids', 'monitorUids', 'signerName', 'signerTitle',
+        'visibility', 'createdBy', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'code', 'name', 'description', 'organizer', 'startDate', 'endDate',
+        'location', 'executionMode', 'quota', 'status', 'requireApproval', 'bannerUrl', 'scoreRanges',
+        'adminUids', 'facilitatorUids', 'monitorUids', 'signerName', 'signerTitle',
+        'visibility', 'usesSamrLevels', 'progressionPolicy', 'guidelines', 'certTemplateTitle',
+        'certTemplateSubtitle', 'certAccentColor', 'certLogoUrl', 'createdBy', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.id == trainingId &&
+      data.code is string && data.code.size() >= 2 && data.code.size() <= 40 &&
+      data.name is string && data.name.size() >= 3 && data.name.size() <= 200 &&
+      data.description is string && data.description.size() <= 2000 &&
+      data.organizer is string && data.organizer.size() >= 2 && data.organizer.size() <= 160 &&
+      data.startDate is string && data.startDate.size() <= 30 &&
+      data.endDate is string && data.endDate.size() <= 30 &&
+      data.location is string && data.location.size() <= 160 &&
+      (!('executionMode' in data) || data.executionMode in ['daring', 'luring', 'hybrid']) &&
+      data.quota is int && data.quota >= 1 && data.quota <= 10000 &&
+      data.status in ['draft', 'aktif', 'selesai', 'arsip'] &&
+      data.requireApproval is bool &&
+      data.bannerUrl is string && data.bannerUrl.size() <= 500 &&
+      data.scoreRanges is list && data.scoreRanges.size() == 4 && data.scoreRanges[0] is map &&
+      isBoundedStringList(data.adminUids, 10) &&
+      isBoundedStringList(data.facilitatorUids, 20) &&
+      isBoundedStringList(data.monitorUids, 10) &&
+      data.signerName is string && data.signerName.size() <= 120 &&
+      data.signerTitle is string && data.signerTitle.size() <= 160 &&
+      data.visibility in ['public_catalog', 'restricted'] &&
+      (!('usesSamrLevels' in data) || data.usesSamrLevels is bool) &&
+      (!('progressionPolicy' in data) || data.progressionPolicy in ['sequential', 'assigned_only']) &&
+      (!('guidelines' in data) || (data.guidelines is string && data.guidelines.size() <= 3000)) &&
+      (!('certTemplateTitle' in data) || (data.certTemplateTitle is string && data.certTemplateTitle.size() <= 120)) &&
+      (!('certTemplateSubtitle' in data) || (data.certTemplateSubtitle is string && data.certTemplateSubtitle.size() <= 300)) &&
+      (!('certAccentColor' in data) || data.certAccentColor in ['navy', 'blue', 'gold']) &&
+      (!('certLogoUrl' in data) || (data.certLogoUrl is string && data.certLogoUrl.size() <= 200000)) &&
+      isValidId(data.createdBy) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidEnrollment(data, enrollmentId) {
+      return data.keys().hasAll([
+        'id', 'trainingId', 'userId', 'userName', 'instansi', 'kabupatenKota',
+        'status', 'startingLevel', 'currentLevel', 'unlockedLevels', 'completedLevels',
+        'assessmentScore', 'overallProgress', 'certificateNumber', 'approvedBy',
+        'enrolledAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'trainingId', 'userId', 'userName', 'instansi', 'npsn', 'kabupatenKota',
+        'jenjangPendidikan', 'mataPelajaran',
+        'status', 'startingLevel', 'currentLevel', 'unlockedLevels', 'completedLevels',
+        'assessmentScore', 'overallProgress', 'certificateNumber', 'approvedBy',
+        'enrolledAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.id == enrollmentId &&
+      isValidId(data.trainingId) &&
+      isValidId(data.userId) &&
+      data.userName is string && data.userName.size() >= 2 && data.userName.size() <= 120 &&
+      data.instansi is string && data.instansi.size() <= 160 &&
+      (!('npsn' in data) || (data.npsn is string && data.npsn.size() <= 16 && data.npsn.matches('^[0-9]*$'))) &&
+      data.kabupatenKota is string && data.kabupatenKota.size() <= 120 &&
+      (!('jenjangPendidikan' in data) || (data.jenjangPendidikan is string && data.jenjangPendidikan.size() <= 80)) &&
+      (!('mataPelajaran' in data) || (data.mataPelajaran is string && data.mataPelajaran.size() <= 120)) &&
+      data.status in ['menunggu', 'disetujui', 'ditolak', 'aktif', 'lulus'] &&
+      data.startingLevel is int && data.startingLevel >= 0 && data.startingLevel <= 4 &&
+      data.currentLevel is int && data.currentLevel >= 0 && data.currentLevel <= 4 &&
+      isBoundedIntList(data.unlockedLevels, 4) &&
+      isBoundedIntList(data.completedLevels, 4) &&
+      data.assessmentScore is number && data.assessmentScore >= -1 && data.assessmentScore <= 100 &&
+      data.overallProgress is number && data.overallProgress >= 0 && data.overallProgress <= 100 &&
+      data.certificateNumber is string && data.certificateNumber.size() <= 80 &&
+      data.approvedBy is string && data.approvedBy.size() <= 128 &&
+      data.enrolledAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidLearningLevel(data, levelId) {
+      return data.keys().hasAll([
+        'id', 'trainingId', 'levelNumber', 'title', 'slug', 'description',
+        'learningObjectives', 'learningOutcomes', 'facilitatorUid', 'facilitatorName',
+        'durationHours', 'minQuizScore', 'minEvaluationScore', 'isActive', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'trainingId', 'levelNumber', 'title', 'slug', 'description',
+        'learningObjectives', 'learningOutcomes', 'facilitatorUid', 'facilitatorName',
+        'durationHours', 'minQuizScore', 'minEvaluationScore',
+        'demoGuide', 'demoVideoUrl', 'taskInstructions', 'taskSteps', 'taskSampleOutput',
+        'requirePracticeValidation', 'isActive', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.id == levelId &&
+      isValidId(data.trainingId) &&
+      data.levelNumber is int && data.levelNumber >= 1 && data.levelNumber <= 4 &&
+      data.title is string && data.title.size() >= 2 && data.title.size() <= 160 &&
+      data.slug in ['dasar', 'berkembang', 'lanjut', 'mahir'] &&
+      data.description is string && data.description.size() <= 1000 &&
+      data.learningObjectives is string && data.learningObjectives.size() <= 1500 &&
+      data.learningOutcomes is string && data.learningOutcomes.size() <= 1500 &&
+      data.facilitatorUid is string && data.facilitatorUid.size() <= 128 &&
+      data.facilitatorName is string && data.facilitatorName.size() <= 120 &&
+      data.durationHours is number && data.durationHours >= 1 && data.durationHours <= 500 &&
+      data.minQuizScore is number && data.minQuizScore >= 0 && data.minQuizScore <= 100 &&
+      data.minEvaluationScore is number && data.minEvaluationScore >= 0 && data.minEvaluationScore <= 100 &&
+      (!('demoGuide' in data) || (data.demoGuide is string && data.demoGuide.size() <= 3000)) &&
+      (!('demoVideoUrl' in data) || (data.demoVideoUrl is string && data.demoVideoUrl.size() <= 500)) &&
+      (!('taskInstructions' in data) || (data.taskInstructions is string && data.taskInstructions.size() <= 3000)) &&
+      (!('taskSteps' in data) || (data.taskSteps is string && data.taskSteps.size() <= 3000)) &&
+      (!('taskSampleOutput' in data) || (data.taskSampleOutput is string && data.taskSampleOutput.size() <= 1500)) &&
+      (!('requirePracticeValidation' in data) || data.requirePracticeValidation is bool) &&
+      data.isActive is bool &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidLearningMaterial(data, materialId) {
+      return data.keys().hasAll([
+        'id', 'trainingId', 'levelId', 'levelNumber', 'title', 'description',
+        'contentType', 'contentBody', 'fileUrl', 'fileName', 'orderIndex',
+        'durationMinutes', 'isMandatory', 'isActive', 'allowDownload',
+        'isPrivateBucket', 'createdBy', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'trainingId', 'levelId', 'levelNumber', 'title', 'description',
+        'contentType', 'contentBody', 'fileUrl', 'fileName', 'orderIndex',
+        'durationMinutes', 'isMandatory', 'isActive', 'allowDownload',
+        'isPrivateBucket', 'createdBy', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.id == materialId &&
+      isValidId(data.trainingId) &&
+      isValidId(data.levelId) &&
+      data.levelNumber is int && data.levelNumber >= 1 && data.levelNumber <= 4 &&
+      data.title is string && data.title.size() >= 2 && data.title.size() <= 200 &&
+      data.description is string && data.description.size() <= 1000 &&
+      data.contentType in ['teks', 'pdf', 'ppt', 'gambar', 'video', 'youtube', 'tautan', 'interaktif'] &&
+      data.contentBody is string && data.contentBody.size() <= 15000 &&
+      data.fileUrl is string && data.fileUrl.size() <= 1000 &&
+      data.fileName is string && data.fileName.size() <= 255 &&
+      data.orderIndex is int && data.orderIndex >= 1 && data.orderIndex <= 200 &&
+      data.durationMinutes is int && data.durationMinutes >= 1 && data.durationMinutes <= 600 &&
+      data.isMandatory is bool &&
+      data.isActive is bool &&
+      data.allowDownload is bool &&
+      data.isPrivateBucket is bool &&
+      isValidId(data.createdBy) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidMaterialProgress(data, progressId) {
+      return data.keys().hasAll([
+        'id', 'trainingId', 'levelId', 'levelNumber', 'materialId',
+        'userId', 'status', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'trainingId', 'levelId', 'levelNumber', 'materialId',
+        'userId', 'status', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.id == progressId &&
+      isValidId(data.trainingId) &&
+      isValidId(data.levelId) &&
+      data.levelNumber is int && data.levelNumber >= 1 && data.levelNumber <= 4 &&
+      isValidId(data.materialId) &&
+      isValidId(data.userId) &&
+      data.status in ['belum', 'dipelajari', 'selesai'] &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidQuestionBank(data, bankId) {
+      return data.keys().hasAll([
+        'id', 'trainingId', 'levelNumber', 'kind', 'title', 'description',
+        'durationMinutes', 'maxAttempts', 'passingScore', 'shuffleQuestions',
+        'showExplanation', 'isActive', 'questions', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'trainingId', 'levelNumber', 'materialId', 'kind', 'title', 'description',
+        'durationMinutes', 'maxAttempts', 'passingScore', 'shuffleQuestions',
+        'showExplanation', 'isActive', 'questions', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.id == bankId &&
+      isValidId(data.trainingId) &&
+      data.levelNumber is int && data.levelNumber >= 0 && data.levelNumber <= 4 &&
+      (!('materialId' in data) || (data.materialId is string && data.materialId.size() <= 128 && data.materialId.matches('^[a-zA-Z0-9_\\-]*$'))) &&
+      data.kind in ['assessment', 'quiz', 'evaluation'] &&
+      data.title is string && data.title.size() >= 2 && data.title.size() <= 200 &&
+      data.description is string && data.description.size() <= 1000 &&
+      data.durationMinutes is int && data.durationMinutes >= 5 && data.durationMinutes <= 240 &&
+      data.maxAttempts is int && data.maxAttempts >= 1 && data.maxAttempts <= 20 &&
+      data.passingScore is number && data.passingScore >= 0 && data.passingScore <= 100 &&
+      data.shuffleQuestions is bool &&
+      data.showExplanation is bool &&
+      data.isActive is bool &&
+      data.questions is list && data.questions.size() <= 40 &&
+      (data.questions.size() == 0 || data.questions[0] is map) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidAnswerKey(data, bankId) {
+      return data.keys().hasAll(['id', 'trainingId', 'kind', 'answers', 'createdAt', 'updatedAt']) &&
+      data.keys().hasOnly(['id', 'trainingId', 'kind', 'answers', 'createdAt', 'updatedAt']) &&
+      isValidId(data.id) &&
+      data.id == bankId &&
+      isValidId(data.trainingId) &&
+      data.kind in ['assessment', 'quiz', 'evaluation'] &&
+      data.answers is list && data.answers.size() <= 40 &&
+      (data.answers.size() == 0 || data.answers[0] is map) &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidAttempt(data, attemptId) {
+      return data.keys().hasAll([
+        'id', 'trainingId', 'bankId', 'kind', 'levelNumber', 'userId', 'userName',
+        'attemptNumber', 'answers', 'autoScore', 'manualScore', 'finalScore',
+        'percentage', 'passed', 'assignedLevel', 'gradingStatus', 'feedback',
+        'gradedBy', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'trainingId', 'bankId', 'kind', 'levelNumber', 'userId', 'userName',
+        'attemptNumber', 'answers', 'autoScore', 'manualScore', 'finalScore',
+        'percentage', 'passed', 'assignedLevel', 'gradingStatus', 'feedback',
+        'gradedBy', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.id == attemptId &&
+      isValidId(data.trainingId) &&
+      isValidId(data.bankId) &&
+      data.kind in ['assessment', 'quiz', 'evaluation'] &&
+      data.levelNumber is int && data.levelNumber >= 0 && data.levelNumber <= 4 &&
+      isValidId(data.userId) &&
+      data.userName is string && data.userName.size() >= 2 && data.userName.size() <= 120 &&
+      data.attemptNumber is int && data.attemptNumber >= 1 && data.attemptNumber <= 20 &&
+      data.answers is map &&
+      data.autoScore is number && data.autoScore >= 0 && data.autoScore <= 100 &&
+      data.manualScore is number && data.manualScore >= 0 && data.manualScore <= 100 &&
+      data.finalScore is number && data.finalScore >= 0 && data.finalScore <= 100 &&
+      data.percentage is number && data.percentage >= 0 && data.percentage <= 100 &&
+      data.passed is bool &&
+      data.assignedLevel is int && data.assignedLevel >= 0 && data.assignedLevel <= 4 &&
+      data.gradingStatus in ['selesai', 'menunggu_manual'] &&
+      data.feedback is string && data.feedback.size() <= 1000 &&
+      data.gradedBy is string && data.gradedBy.size() <= 128 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidCertificate(data, certId) {
+      return data.keys().hasAll([
+        'certificateNumber', 'trainingId', 'trainingName', 'organizer', 'userId',
+        'participantName', 'completedLevel', 'issuedDate', 'signerName',
+        'signerTitle', 'status', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'certificateNumber', 'trainingId', 'trainingName', 'organizer', 'userId',
+        'participantName', 'completedLevel', 'issuedDate', 'signerName',
+        'signerTitle', 'status', 'createdAt'
+      ]) &&
+      isValidId(data.certificateNumber) &&
+      data.certificateNumber == certId &&
+      isValidId(data.trainingId) &&
+      data.trainingName is string && data.trainingName.size() >= 2 && data.trainingName.size() <= 200 &&
+      data.organizer is string && data.organizer.size() >= 2 && data.organizer.size() <= 160 &&
+      isValidId(data.userId) &&
+      data.participantName is string && data.participantName.size() >= 2 && data.participantName.size() <= 120 &&
+      data.completedLevel is int && data.completedLevel >= 1 && data.completedLevel <= 4 &&
+      data.issuedDate is string && data.issuedDate.size() <= 30 &&
+      data.signerName is string && data.signerName.size() <= 120 &&
+      data.signerTitle is string && data.signerTitle.size() <= 160 &&
+      data.status in ['valid', 'dicabut'] &&
+      data.createdAt is timestamp;
+    }
+
+    function isValidActivityLog(data, logId) {
+      return data.keys().hasAll([
+        'id', 'trainingId', 'actorUid', 'actorName', 'actorRole', 'action',
+        'targetType', 'targetId', 'details', 'overrideReason', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'trainingId', 'actorUid', 'actorName', 'actorRole', 'action',
+        'targetType', 'targetId', 'details', 'overrideReason', 'createdAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.id == logId &&
+      data.trainingId is string && data.trainingId.size() <= 128 &&
+      isValidId(data.actorUid) &&
+      data.actorName is string && data.actorName.size() >= 1 && data.actorName.size() <= 120 &&
+      data.actorRole is string && data.actorRole.size() >= 1 && data.actorRole.size() <= 40 &&
+      data.action is string && data.action.size() >= 2 && data.action.size() <= 100 &&
+      data.targetType is string && data.targetType.size() >= 2 && data.targetType.size() <= 60 &&
+      data.targetId is string && data.targetId.size() >= 1 && data.targetId.size() <= 128 &&
+      data.details is string && data.details.size() <= 1000 &&
+      data.overrideReason is string && data.overrideReason.size() <= 500 &&
+      data.createdAt is timestamp;
+    }
+
+    function isValidAnnouncement(data, annId) {
+      return data.keys().hasAll([
+        'id', 'trainingId', 'title', 'body', 'authorUid', 'authorName',
+        'isPublished', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'trainingId', 'title', 'body', 'authorUid', 'authorName',
+        'isPublished', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.id == annId &&
+      isValidId(data.trainingId) &&
+      data.title is string && data.title.size() >= 2 && data.title.size() <= 200 &&
+      data.body is string && data.body.size() >= 2 && data.body.size() <= 2000 &&
+      isValidId(data.authorUid) &&
+      data.authorName is string && data.authorName.size() <= 120 &&
+      data.isPublished is bool &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidTrainingSchedule(data, scheduleId) {
+      return data.keys().hasAll([
+        'id', 'trainingId', 'levelNumber', 'title', 'sessionDate', 'startTime',
+        'endTime', 'facilitatorName', 'mode', 'locationOrUrl', 'notes', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'trainingId', 'levelNumber', 'title', 'sessionDate', 'startTime',
+        'endTime', 'facilitatorName', 'mode', 'locationOrUrl', 'notes', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.id == scheduleId &&
+      isValidId(data.trainingId) &&
+      data.levelNumber is int && data.levelNumber >= 0 && data.levelNumber <= 4 &&
+      data.title is string && data.title.size() >= 2 && data.title.size() <= 200 &&
+      data.sessionDate is string && data.sessionDate.size() <= 30 &&
+      data.startTime is string && data.startTime.size() <= 20 &&
+      data.endTime is string && data.endTime.size() <= 20 &&
+      data.facilitatorName is string && data.facilitatorName.size() <= 120 &&
+      data.mode in ['daring', 'luring', 'mandiri'] &&
+      data.locationOrUrl is string && data.locationOrUrl.size() <= 500 &&
+      data.notes is string && data.notes.size() <= 1000 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidFacilitatorNote(data, noteId) {
+      return data.keys().hasAll([
+        'id', 'trainingId', 'levelNumber', 'participantUid', 'participantName',
+        'authorUid', 'authorName', 'content', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'trainingId', 'levelNumber', 'participantUid', 'participantName',
+        'authorUid', 'authorName', 'content', 'createdAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.id == noteId &&
+      isValidId(data.trainingId) &&
+      data.levelNumber is int && data.levelNumber >= 0 && data.levelNumber <= 4 &&
+      isValidId(data.participantUid) &&
+      data.participantName is string && data.participantName.size() >= 1 && data.participantName.size() <= 120 &&
+      isValidId(data.authorUid) &&
+      data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 120 &&
+      data.content is string && data.content.size() >= 2 && data.content.size() <= 1500 &&
+      data.createdAt is timestamp;
+    }
+
+    function isValidInstitutionSettings(data, settingId) {
+      return data.keys().hasAll([
+        'id', 'appName', 'tagline', 'institutionName', 'address', 'website',
+        'supportEmail', 'certificatePrefix', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'appName', 'tagline', 'institutionName', 'address', 'website',
+        'supportEmail', 'certificatePrefix', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.id == settingId &&
+      data.appName is string && data.appName.size() >= 2 && data.appName.size() <= 120 &&
+      data.tagline is string && data.tagline.size() <= 200 &&
+      data.institutionName is string && data.institutionName.size() >= 2 && data.institutionName.size() <= 180 &&
+      data.address is string && data.address.size() <= 300 &&
+      data.website is string && data.website.size() <= 200 &&
+      data.supportEmail is string && data.supportEmail.size() <= 160 &&
+      data.certificatePrefix is string && data.certificatePrefix.size() >= 2 && data.certificatePrefix.size() <= 30 &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidTaskSubmission(data, submissionId) {
+      return data.keys().hasAll([
+        'id', 'trainingId', 'levelNumber', 'userId', 'userName', 'title',
+        'description', 'productUrl', 'productFileName', 'docMediaUrl', 'docMediaName',
+        'status', 'rubricScores', 'weightedScore', 'facilitatorFeedback',
+        'gradedBy', 'gradedByName', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'trainingId', 'levelNumber', 'userId', 'userName', 'title',
+        'description', 'productUrl', 'productFileName', 'docMediaUrl', 'docMediaName',
+        'status', 'rubricScores', 'weightedScore', 'facilitatorFeedback',
+        'gradedBy', 'gradedByName', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.id == submissionId &&
+      isValidId(data.trainingId) &&
+      data.levelNumber is int && data.levelNumber >= 1 && data.levelNumber <= 4 &&
+      isValidId(data.userId) &&
+      data.userName is string && data.userName.size() >= 2 && data.userName.size() <= 120 &&
+      data.title is string && data.title.size() >= 2 && data.title.size() <= 200 &&
+      data.description is string && data.description.size() >= 5 && data.description.size() <= 3000 &&
+      data.productUrl is string && data.productUrl.size() <= 1000 &&
+      data.productFileName is string && data.productFileName.size() <= 255 &&
+      data.docMediaUrl is string && data.docMediaUrl.size() <= 1000 &&
+      data.docMediaName is string && data.docMediaName.size() <= 255 &&
+      data.status in ['menunggu_penilaian', 'lulus', 'perlu_perbaikan'] &&
+      data.rubricScores is list && data.rubricScores.size() <= 12 &&
+      (data.rubricScores.size() == 0 || data.rubricScores[0] is map) &&
+      data.weightedScore is number && data.weightedScore >= 0 && data.weightedScore <= 100 &&
+      data.facilitatorFeedback is string && data.facilitatorFeedback.size() <= 2000 &&
+      data.gradedBy is string && data.gradedBy.size() <= 128 &&
+      data.gradedByName is string && data.gradedByName.size() <= 120 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidLevelReflection(data, reflectionId) {
+      return data.keys().hasAll([
+        'id', 'trainingId', 'levelNumber', 'userId', 'userName',
+        'learningExperience', 'challenges', 'competenciesGained',
+        'schoolImplementationPlan', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'trainingId', 'levelNumber', 'userId', 'userName',
+        'learningExperience', 'challenges', 'competenciesGained',
+        'schoolImplementationPlan', 'createdAt', 'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.id == reflectionId &&
+      isValidId(data.trainingId) &&
+      data.levelNumber is int && data.levelNumber >= 1 && data.levelNumber <= 4 &&
+      isValidId(data.userId) &&
+      data.userName is string && data.userName.size() >= 2 && data.userName.size() <= 120 &&
+      data.learningExperience is string && data.learningExperience.size() >= 5 && data.learningExperience.size() <= 2000 &&
+      data.challenges is string && data.challenges.size() <= 2000 &&
+      data.competenciesGained is string && data.competenciesGained.size() <= 2000 &&
+      data.schoolImplementationPlan is string && data.schoolImplementationPlan.size() >= 5 && data.schoolImplementationPlan.size() <= 2000 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    function isValidMaterialFile(data, fileId) {
+      return data.keys().hasAll([
+        'id', 'fileName', 'mimeType', 'sizeBytes', 'chunkCount',
+        'uploadedBy', 'isActive', 'createdAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id', 'fileName', 'mimeType', 'sizeBytes', 'chunkCount',
+        'uploadedBy', 'isActive', 'createdAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.id == fileId &&
+      data.fileName is string && data.fileName.size() >= 1 && data.fileName.size() <= 255 &&
+      data.mimeType is string && data.mimeType.size() >= 1 && data.mimeType.size() <= 120 &&
+      data.sizeBytes is int && data.sizeBytes >= 1 && data.sizeBytes <= 12582912 &&
+      data.chunkCount is int && data.chunkCount >= 1 && data.chunkCount <= 32 &&
+      isValidId(data.uploadedBy) &&
+      data.uploadedBy == request.auth.uid &&
+      data.isActive is bool &&
+      data.createdAt is timestamp;
+    }
+
+    function isValidMaterialFileChunk(data, fileId, chunkId) {
+      return data.keys().hasAll(['id', 'fileId', 'chunkIndex', 'data', 'createdAt']) &&
+      data.keys().hasOnly(['id', 'fileId', 'chunkIndex', 'data', 'createdAt']) &&
+      isValidId(data.id) &&
+      data.id == chunkId &&
+      isValidId(data.fileId) &&
+      data.fileId == fileId &&
+      data.chunkIndex is int && data.chunkIndex >= 0 && data.chunkIndex <= 31 &&
+      data.data is string && data.data.size() >= 1 && data.data.size() <= 600000 &&
+      data.createdAt is timestamp;
+    }
+
+    // ---------------------------------------------------------
+    // 1. profiles (Private PII — Owner or Bootstrapped Admin)
+    // ---------------------------------------------------------
+    match /profiles/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (isOwner(userId) || isAdminRole());
+      allow list: if isSignedIn() && (existing().uid == request.auth.uid || isAdminRole());
+
+      allow create: if isVerifiedEmail() &&
+        isValidId(userId) &&
+        isValidProfile(incoming(), userId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        (
+          isBootstrappedAdmin() ||
+          (isOwner(userId) && incoming().role == 'peserta' && incoming().isActive == true)
+        );
+
+      allow update: if isVerifiedEmail() &&
+        isValidId(userId) &&
+        isValidProfile(incoming(), userId) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isBootstrappedAdmin() ||
+          (
+            isOwner(userId) &&
+            incoming().role == existing().role &&
+            incoming().isActive == existing().isActive &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'fullName', 'phone', 'instansi', 'npsn', 'kabupatenKota', 'jabatan',
+              'jenjangPendidikan', 'mataPelajaran', 'statusPeserta', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isBootstrappedAdmin() && isValidId(userId);
+    }
+
+    // ---------------------------------------------------------
+    // 2. public_profiles (Non-PII Split Collection)
+    // ---------------------------------------------------------
+    match /public_profiles/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (existing().isPublic == true || isOwner(userId) || isBootstrappedAdmin());
+      allow list: if isSignedIn() && (existing().isPublic == true || isBootstrappedAdmin());
+
+      allow create: if isVerifiedEmail() &&
+        isValidId(userId) &&
+        isValidPublicProfile(incoming(), userId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        (
+          isBootstrappedAdmin() ||
+          (isOwner(userId) && incoming().role == 'peserta' && incoming().isActive == true)
+        );
+
+      allow update: if isVerifiedEmail() &&
+        isValidId(userId) &&
+        isValidPublicProfile(incoming(), userId) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isBootstrappedAdmin() ||
+          (
+            isOwner(userId) &&
+            incoming().role == existing().role &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'instansi', 'kabupatenKota', 'updatedAt'])
+          )
+        );
+
+      allow delete: if isBootstrappedAdmin() && isValidId(userId);
+    }
+
+    // ---------------------------------------------------------
+    // 3. training_programs
+    // ---------------------------------------------------------
+    match /training_programs/{trainingId} {
+      allow get: if isSignedIn() && isValidId(trainingId) && (
+        existing().visibility == 'public_catalog' ||
+        isMonitoringRole() ||
+        request.auth.uid in existing().adminUids ||
+        request.auth.uid in existing().facilitatorUids ||
+        request.auth.uid in existing().monitorUids
+      );
+
+      allow list: if isSignedIn() && (
+        existing().visibility == 'public_catalog' ||
+        isMonitoringRole() ||
+        request.auth.uid in existing().adminUids ||
+        request.auth.uid in existing().facilitatorUids ||
+        request.auth.uid in existing().monitorUids
+      );
+
+      allow create: if isAdminRole() &&
+        isValidId(trainingId) &&
+        isValidTrainingProgram(incoming(), trainingId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedEmail() &&
+        isValidId(trainingId) &&
+        isValidTrainingProgram(incoming(), trainingId) &&
+        incoming().id == existing().id &&
+        incoming().createdBy == existing().createdBy &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdminRole() ||
+          (
+            request.auth.uid in existing().adminUids &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'description', 'organizer', 'startDate', 'endDate', 'location',
+              'executionMode', 'quota', 'status', 'requireApproval', 'scoreRanges', 'usesSamrLevels', 'progressionPolicy',
+              'guidelines', 'signerName', 'signerTitle', 'certTemplateTitle',
+              'certTemplateSubtitle', 'certAccentColor', 'certLogoUrl', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isAdminRole() && isValidId(trainingId);
+    }
+
+    // ---------------------------------------------------------
+    // 4. training_enrollments (Sequential Learning Enforced)
+    // ---------------------------------------------------------
+    match /training_enrollments/{enrollmentId} {
+      allow get: if isSignedIn() && isValidId(enrollmentId) && (existing().userId == request.auth.uid || isMonitoringRole());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isMonitoringRole());
+
+      allow create: if isVerifiedEmail() &&
+        isValidId(enrollmentId) &&
+        isValidEnrollment(incoming(), enrollmentId) &&
+        incoming().enrolledAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/training_programs/$(incoming().trainingId)) &&
+        (
+          isAdminRole() ||
+          (
+            incoming().userId == request.auth.uid &&
+            incoming().startingLevel == 0 &&
+            incoming().currentLevel == 0 &&
+            incoming().unlockedLevels.size() == 0 &&
+            incoming().completedLevels.size() == 0 &&
+            incoming().assessmentScore == -1 &&
+            incoming().overallProgress == 0 &&
+            incoming().certificateNumber == '' &&
+            incoming().approvedBy == '' &&
+            (
+              (get(/databases/$(database)/documents/training_programs/$(incoming().trainingId)).data.requireApproval == true && incoming().status == 'menunggu') ||
+              (get(/databases/$(database)/documents/training_programs/$(incoming().trainingId)).data.requireApproval == false && incoming().status == 'disetujui')
+            )
+          )
+        );
+
+      allow update: if isVerifiedEmail() &&
+        isValidId(enrollmentId) &&
+        isValidEnrollment(incoming(), enrollmentId) &&
+        incoming().id == existing().id &&
+        incoming().trainingId == existing().trainingId &&
+        incoming().userId == existing().userId &&
+        incoming().enrolledAt == existing().enrolledAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdminRole() ||
+          (
+            // Action A: Initial Assessment Placement (SAMR: 1 starting level; Non-SAMR: all modules unlocked)
+            existing().userId == request.auth.uid &&
+            existing().status in ['disetujui', 'aktif'] &&
+            existing().startingLevel == 0 &&
+            incoming().startingLevel >= 1 &&
+            incoming().startingLevel <= 4 &&
+            incoming().currentLevel == incoming().startingLevel &&
+            incoming().unlockedLevels.size() >= 1 &&
+            incoming().unlockedLevels.size() <= 4 &&
+            incoming().startingLevel in incoming().unlockedLevels &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'status', 'startingLevel', 'currentLevel', 'unlockedLevels', 'assessmentScore', 'updatedAt'
+            ])
+          ) ||
+          (
+            // Action B: Verified Sequential Progression (+1 level max, never after terminal 'lulus')
+            existing().userId == request.auth.uid &&
+            existing().status in ['disetujui', 'aktif'] &&
+            existing().startingLevel >= 1 &&
+            incoming().startingLevel == existing().startingLevel &&
+            incoming().assessmentScore == existing().assessmentScore &&
+            incoming().currentLevel >= existing().currentLevel &&
+            incoming().currentLevel <= existing().currentLevel + 1 &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'status', 'currentLevel', 'unlockedLevels', 'completedLevels', 'overallProgress', 'certificateNumber', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isAdminRole() && isValidId(enrollmentId);
+    }
+
+    // ---------------------------------------------------------
+    // 5. learning_levels
+    // ---------------------------------------------------------
+    match /learning_levels/{levelId} {
+      allow get: if isSignedIn() && isValidId(levelId) && (existing().isActive == true || isMonitoringRole());
+      allow list: if isSignedIn() && (existing().isActive == true || isMonitoringRole());
+
+      allow create: if isAdminRole() &&
+        isValidId(levelId) &&
+        isValidLearningLevel(incoming(), levelId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        existsAfter(/databases/$(database)/documents/training_programs/$(incoming().trainingId));
+
+      allow update: if isAdminRole() &&
+        isValidId(levelId) &&
+        isValidLearningLevel(incoming(), levelId) &&
+        incoming().id == existing().id &&
+        incoming().trainingId == existing().trainingId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+
+      allow delete: if isAdminRole() && isValidId(levelId);
+    }
+
+    // ---------------------------------------------------------
+    // 6. learning_materials
+    // ---------------------------------------------------------
+    match /learning_materials/{materialId} {
+      allow get: if isSignedIn() && isValidId(materialId) && (existing().isActive == true || isStaffRole());
+      allow list: if isSignedIn() && (existing().isActive == true || isStaffRole());
+
+      allow create: if isStaffRole() &&
+        isValidId(materialId) &&
+        isValidLearningMaterial(incoming(), materialId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        existsAfter(/databases/$(database)/documents/training_programs/$(incoming().trainingId));
+
+      allow update: if isStaffRole() &&
+        isValidId(materialId) &&
+        isValidLearningMaterial(incoming(), materialId) &&
+        incoming().id == existing().id &&
+        incoming().trainingId == existing().trainingId &&
+        incoming().createdBy == existing().createdBy &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+
+      allow delete: if isStaffRole() && isValidId(materialId);
+    }
+
+    // ---------------------------------------------------------
+    // 7. material_progress
+    // ---------------------------------------------------------
+    match /material_progress/{progressId} {
+      allow get: if isSignedIn() && isValidId(progressId) && (existing().userId == request.auth.uid || isMonitoringRole());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isMonitoringRole());
+
+      allow create: if isVerifiedEmail() &&
+        isValidId(progressId) &&
+        isValidMaterialProgress(incoming(), progressId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        existsAfter(/databases/$(database)/documents/learning_materials/$(incoming().materialId)) &&
+        (isBootstrappedAdmin() || incoming().userId == request.auth.uid);
+
+      allow update: if isVerifiedEmail() &&
+        isValidId(progressId) &&
+        isValidMaterialProgress(incoming(), progressId) &&
+        incoming().id == existing().id &&
+        incoming().trainingId == existing().trainingId &&
+        incoming().levelId == existing().levelId &&
+        incoming().materialId == existing().materialId &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isBootstrappedAdmin() ||
+          (
+            existing().userId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+        );
+
+      allow delete: if isBootstrappedAdmin() && isValidId(progressId);
+    }
+
+    // ---------------------------------------------------------
+    // 8. question_banks (No plaintext answer keys)
+    // ---------------------------------------------------------
+    match /question_banks/{bankId} {
+      allow get: if isSignedIn() && isValidId(bankId) && (existing().isActive == true || isStaffRole());
+      allow list: if isSignedIn() && (existing().isActive == true || isStaffRole());
+
+      allow create: if isStaffRole() &&
+        isValidId(bankId) &&
+        isValidQuestionBank(incoming(), bankId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        existsAfter(/databases/$(database)/documents/training_programs/$(incoming().trainingId));
+
+      allow update: if isStaffRole() &&
+        isValidId(bankId) &&
+        isValidQuestionBank(incoming(), bankId) &&
+        incoming().id == existing().id &&
+        incoming().trainingId == existing().trainingId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+
+      allow delete: if isStaffRole() && isValidId(bankId);
+    }
+
+    // ---------------------------------------------------------
+    // 9. answer_keys (Single-Doc Auto-Grading Lookup; List Staff-Only)
+    // ---------------------------------------------------------
+    match /answer_keys/{bankId} {
+      allow get: if isSignedIn() && isValidId(bankId);
+      allow list: if isStaffRole();
+
+      allow create: if isStaffRole() &&
+        isValidId(bankId) &&
+        isValidAnswerKey(incoming(), bankId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isStaffRole() &&
+        isValidId(bankId) &&
+        isValidAnswerKey(incoming(), bankId) &&
+        incoming().id == existing().id &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+
+      allow delete: if isStaffRole() && isValidId(bankId);
+    }
+
+    // ---------------------------------------------------------
+    // 10. attempts (Append-only for Participants; Grading by Staff)
+    // ---------------------------------------------------------
+    match /attempts/{attemptId} {
+      allow get: if isSignedIn() && isValidId(attemptId) && (existing().userId == request.auth.uid || isMonitoringRole());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isMonitoringRole());
+
+      allow create: if isVerifiedEmail() &&
+        isValidId(attemptId) &&
+        isValidAttempt(incoming(), attemptId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        existsAfter(/databases/$(database)/documents/question_banks/$(incoming().bankId)) &&
+        (isStaffRole() || incoming().userId == request.auth.uid);
+
+      allow update: if isStaffRole() &&
+        isValidId(attemptId) &&
+        isValidAttempt(incoming(), attemptId) &&
+        incoming().id == existing().id &&
+        incoming().trainingId == existing().trainingId &&
+        incoming().bankId == existing().bankId &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+
+      allow delete: if isAdminRole() && isValidId(attemptId);
+    }
+
+    // ---------------------------------------------------------
+    // 11. certificates (Public Single-Doc Verification Only)
+    // ---------------------------------------------------------
+    match /certificates/{certificateNumber} {
+      allow get: if isValidId(certificateNumber);
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isMonitoringRole());
+
+      allow create: if isVerifiedEmail() &&
+        isValidId(certificateNumber) &&
+        isValidCertificate(incoming(), certificateNumber) &&
+        incoming().createdAt == request.time &&
+        existsAfter(/databases/$(database)/documents/training_programs/$(incoming().trainingId)) &&
+        (isAdminRole() || (incoming().userId == request.auth.uid && incoming().status == 'valid'));
+
+      allow update: if isAdminRole() &&
+        isValidId(certificateNumber) &&
+        isValidCertificate(incoming(), certificateNumber) &&
+        incoming().certificateNumber == existing().certificateNumber &&
+        incoming().createdAt == existing().createdAt;
+
+      allow delete: if false;
+    }
+
+    // ---------------------------------------------------------
+    // 12. activity_logs (Immutable Audit Trail)
+    // ---------------------------------------------------------
+    match /activity_logs/{logId} {
+      allow get: if isSignedIn() && isValidId(logId) && (existing().actorUid == request.auth.uid || isMonitoringRole());
+      allow list: if isSignedIn() && (existing().actorUid == request.auth.uid || isMonitoringRole());
+
+      allow create: if isVerifiedEmail() &&
+        isValidId(logId) &&
+        isValidActivityLog(incoming(), logId) &&
+        incoming().createdAt == request.time &&
+        (isStaffRole() || incoming().actorUid == request.auth.uid);
+
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ---------------------------------------------------------
+    // 13. announcements
+    // ---------------------------------------------------------
+    match /announcements/{announcementId} {
+      allow get: if isSignedIn() && isValidId(announcementId) && (existing().isPublished == true || isBootstrappedAdmin());
+      allow list: if isSignedIn() && (existing().isPublished == true || isBootstrappedAdmin());
+
+      allow create: if isBootstrappedAdmin() &&
+        isValidId(announcementId) &&
+        isValidAnnouncement(incoming(), announcementId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        existsAfter(/databases/$(database)/documents/training_programs/$(incoming().trainingId));
+
+      allow update: if isBootstrappedAdmin() &&
+        isValidId(announcementId) &&
+        isValidAnnouncement(incoming(), announcementId) &&
+        incoming().id == existing().id &&
+        incoming().trainingId == existing().trainingId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+
+      allow delete: if isBootstrappedAdmin() && isValidId(announcementId);
+    }
+
+    // ---------------------------------------------------------
+    // 14. training_schedules
+    // ---------------------------------------------------------
+    match /training_schedules/{scheduleId} {
+      allow get: if isSignedIn() && isValidId(scheduleId) && (existing().levelNumber >= 0 || isBootstrappedAdmin());
+      allow list: if isSignedIn() && (existing().levelNumber >= 0 || isBootstrappedAdmin());
+
+      allow create: if isBootstrappedAdmin() &&
+        isValidId(scheduleId) &&
+        isValidTrainingSchedule(incoming(), scheduleId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        existsAfter(/databases/$(database)/documents/training_programs/$(incoming().trainingId));
+
+      allow update: if isBootstrappedAdmin() &&
+        isValidId(scheduleId) &&
+        isValidTrainingSchedule(incoming(), scheduleId) &&
+        incoming().id == existing().id &&
+        incoming().trainingId == existing().trainingId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+
+      allow delete: if isBootstrappedAdmin() && isValidId(scheduleId);
+    }
+
+    // ---------------------------------------------------------
+    // 15. facilitator_notes
+    // ---------------------------------------------------------
+    match /facilitator_notes/{noteId} {
+      allow get: if isSignedIn() && isValidId(noteId) && (
+        existing().participantUid == request.auth.uid ||
+        existing().participantUid == 'all' ||
+        existing().authorUid == request.auth.uid ||
+        isBootstrappedAdmin()
+      );
+      allow list: if isSignedIn() && (
+        existing().participantUid == request.auth.uid ||
+        existing().participantUid == 'all' ||
+        existing().authorUid == request.auth.uid ||
+        isBootstrappedAdmin()
+      );
+
+      allow create: if isBootstrappedAdmin() &&
+        isValidId(noteId) &&
+        isValidFacilitatorNote(incoming(), noteId) &&
+        incoming().createdAt == request.time &&
+        existsAfter(/databases/$(database)/documents/training_programs/$(incoming().trainingId));
+
+      allow update: if false;
+      allow delete: if isBootstrappedAdmin() && isValidId(noteId);
+    }
+
+    // ---------------------------------------------------------
+    // 16. institution_settings (Non-PII Platform Config)
+    // ---------------------------------------------------------
+    match /institution_settings/{settingId} {
+      allow get: if isValidId(settingId) && settingId == 'default';
+      allow list: if isBootstrappedAdmin();
+
+      allow create: if isBootstrappedAdmin() &&
+        isValidId(settingId) &&
+        settingId == 'default' &&
+        isValidInstitutionSettings(incoming(), settingId) &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isBootstrappedAdmin() &&
+        isValidId(settingId) &&
+        settingId == 'default' &&
+        isValidInstitutionSettings(incoming(), settingId) &&
+        incoming().id == existing().id &&
+        incoming().updatedAt == request.time;
+
+      allow delete: if false;
+    }
+
+    // ---------------------------------------------------------
+    // 17. task_submissions (PID Practical Tasks & Rubric Grading)
+    // ---------------------------------------------------------
+    match /task_submissions/{submissionId} {
+      allow get: if isSignedIn() && isValidId(submissionId) && (
+        existing().userId == request.auth.uid || isMonitoringRole()
+      );
+      allow list: if isSignedIn() && (
+        existing().userId == request.auth.uid || isMonitoringRole()
+      );
+
+      allow create: if isVerifiedEmail() &&
+        isValidId(submissionId) &&
+        isValidTaskSubmission(incoming(), submissionId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        existsAfter(/databases/$(database)/documents/training_programs/$(incoming().trainingId)) &&
+        (
+          isStaffRole() ||
+          (
+            incoming().userId == request.auth.uid &&
+            incoming().status == 'menunggu_penilaian' &&
+            incoming().weightedScore == 0 &&
+            incoming().gradedBy == ''
+          )
+        );
+
+      allow update: if isVerifiedEmail() &&
+        isValidId(submissionId) &&
+        isValidTaskSubmission(incoming(), submissionId) &&
+        incoming().id == existing().id &&
+        incoming().trainingId == existing().trainingId &&
+        incoming().levelNumber == existing().levelNumber &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isStaffRole() ||
+          (
+            existing().userId == request.auth.uid &&
+            existing().status != 'lulus' &&
+            incoming().status == 'menunggu_penilaian' &&
+            incoming().weightedScore == existing().weightedScore &&
+            incoming().gradedBy == existing().gradedBy &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'description', 'productUrl', 'productFileName',
+              'docMediaUrl', 'docMediaName', 'status', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isAdminRole() && isValidId(submissionId);
+    }
+
+    // ---------------------------------------------------------
+    // 18. level_reflections (Per-Level Learning Reflections)
+    // ---------------------------------------------------------
+    match /level_reflections/{reflectionId} {
+      allow get: if isSignedIn() && isValidId(reflectionId) && (
+        existing().userId == request.auth.uid || isMonitoringRole()
+      );
+      allow list: if isSignedIn() && (
+        existing().userId == request.auth.uid || isMonitoringRole()
+      );
+
+      allow create: if isVerifiedEmail() &&
+        isValidId(reflectionId) &&
+        isValidLevelReflection(incoming(), reflectionId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        existsAfter(/databases/$(database)/documents/training_programs/$(incoming().trainingId)) &&
+        (isBootstrappedAdmin() || incoming().userId == request.auth.uid);
+
+      allow update: if isVerifiedEmail() &&
+        isValidId(reflectionId) &&
+        isValidLevelReflection(incoming(), reflectionId) &&
+        incoming().id == existing().id &&
+        incoming().trainingId == existing().trainingId &&
+        incoming().levelNumber == existing().levelNumber &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isBootstrappedAdmin() ||
+          (
+            existing().userId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'learningExperience', 'challenges', 'competenciesGained',
+              'schoolImplementationPlan', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isBootstrappedAdmin() && isValidId(reflectionId);
+    }
+
+    // ---------------------------------------------------------
+    // 19. material_files (Persistent Cloud-Backed Material Files)
+    // ---------------------------------------------------------
+    match /material_files/{fileId} {
+      allow get: if isSignedIn() && isValidId(fileId) && (existing().isActive == true || isStaffRole());
+      allow list: if isSignedIn() && (existing().isActive == true || isStaffRole());
+
+      allow create: if isVerifiedEmail() &&
+        isValidId(fileId) &&
+        isValidMaterialFile(incoming(), fileId) &&
+        incoming().createdAt == request.time &&
+        isStaffRole();
+
+      allow update: if false;
+      allow delete: if isStaffRole() && isValidId(fileId);
+
+      match /chunks/{chunkId} {
+        allow get: if isSignedIn() &&
+          isValidId(fileId) &&
+          isValidId(chunkId) &&
+          exists(/databases/$(database)/documents/material_files/$(fileId)) &&
+          (
+            get(/databases/$(database)/documents/material_files/$(fileId)).data.isActive == true ||
+            isStaffRole()
+          );
+
+        allow list: if false;
+
+        allow create: if isVerifiedEmail() &&
+          isValidId(fileId) &&
+          isValidId(chunkId) &&
+          isValidMaterialFileChunk(incoming(), fileId, chunkId) &&
+          incoming().createdAt == request.time &&
+          isStaffRole() &&
+          existsAfter(/databases/$(database)/documents/material_files/$(fileId));
+
+        allow update: if false;
+        allow delete: if isStaffRole() && isValidId(fileId) && isValidId(chunkId);
+      }
+    }
+
+    // Connection check doc (read-only ping)
+    match /test/connection {
+      allow get: if isSignedIn();
+    }
+  }
+}

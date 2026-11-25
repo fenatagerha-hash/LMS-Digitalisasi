@@ -1,0 +1,6 @@
+{
+  "name": "LMS Pelatihan Digital",
+  "description": "Platform Learning Management System Pelatihan Digital empat level pembelajaran dengan asesmen awal adaptif, kuis, evaluasi, sertifikat digital QR, dan monitoring multi-peran.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

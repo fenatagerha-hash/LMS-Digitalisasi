@@ -1,0 +1,497 @@
+{
+  "entities": {
+    "Profile": {
+      "title": "Profile",
+      "description": "Private user account profile containing PII and assigned LMS role.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fullName": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "email": { "type": "string", "format": "email", "maxLength": 160 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "instansi": { "type": "string", "maxLength": 160 },
+        "npsn": { "type": "string", "maxLength": 16, "pattern": "^[0-9]*$" },
+        "kabupatenKota": { "type": "string", "maxLength": 120 },
+        "jabatan": { "type": "string", "maxLength": 120 },
+        "role": {
+          "type": "string",
+          "enum": ["super_admin", "admin_kegiatan", "fasilitator", "peserta", "pemantau"]
+        },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "fullName", "email", "role", "isActive", "createdAt", "updatedAt"]
+    },
+    "PublicProfile": {
+      "title": "PublicProfile",
+      "description": "Non-PII directory record for displaying participant and facilitator names.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "role": {
+          "type": "string",
+          "enum": ["super_admin", "admin_kegiatan", "fasilitator", "peserta", "pemantau"]
+        },
+        "instansi": { "type": "string", "maxLength": 160 },
+        "kabupatenKota": { "type": "string", "maxLength": 120 },
+        "isActive": { "type": "boolean" },
+        "isPublic": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "role", "isActive", "isPublic", "createdAt", "updatedAt"]
+    },
+    "TrainingProgram": {
+      "title": "TrainingProgram",
+      "description": "Training activity container with isolated levels, materials, assessments, and score ranges.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "code": { "type": "string", "maxLength": 40 },
+        "name": { "type": "string", "minLength": 3, "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "organizer": { "type": "string", "maxLength": 160 },
+        "startDate": { "type": "string", "maxLength": 30 },
+        "endDate": { "type": "string", "maxLength": 30 },
+        "location": { "type": "string", "maxLength": 160 },
+        "quota": { "type": "integer" },
+        "status": { "type": "string", "enum": ["draft", "aktif", "selesai", "arsip"] },
+        "requireApproval": { "type": "boolean" },
+        "bannerUrl": { "type": "string", "maxLength": 500 },
+        "signerName": { "type": "string", "maxLength": 120 },
+        "signerTitle": { "type": "string", "maxLength": 160 },
+        "visibility": { "type": "string", "enum": ["public_catalog", "restricted"] },
+        "usesSamrLevels": { "type": "boolean" },
+        "progressionPolicy": { "type": "string", "enum": ["sequential", "assigned_only"] },
+        "guidelines": { "type": "string", "maxLength": 3000 },
+        "certTemplateTitle": { "type": "string", "maxLength": 120 },
+        "certTemplateSubtitle": { "type": "string", "maxLength": 300 },
+        "certAccentColor": { "type": "string", "enum": ["navy", "blue", "gold"] },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "code", "name", "organizer", "startDate", "endDate", "quota", "status", "requireApproval", "visibility", "createdBy", "createdAt", "updatedAt"]
+    },
+    "TrainingEnrollment": {
+      "title": "TrainingEnrollment",
+      "description": "Participant registration, starting level placement, sequential unlocks, and graduation state.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "trainingId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userName": { "type": "string", "maxLength": 120 },
+        "instansi": { "type": "string", "maxLength": 160 },
+        "npsn": { "type": "string", "maxLength": 16, "pattern": "^[0-9]*$" },
+        "kabupatenKota": { "type": "string", "maxLength": 120 },
+        "status": { "type": "string", "enum": ["menunggu", "disetujui", "ditolak", "aktif", "lulus"] },
+        "startingLevel": { "type": "integer" },
+        "currentLevel": { "type": "integer" },
+        "assessmentScore": { "type": "number" },
+        "overallProgress": { "type": "number" },
+        "certificateNumber": { "type": "string", "maxLength": 80 },
+        "enrolledAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "trainingId", "userId", "userName", "status", "startingLevel", "currentLevel", "assessmentScore", "overallProgress", "certificateNumber", "enrolledAt", "updatedAt"]
+    },
+    "LearningLevel": {
+      "title": "LearningLevel",
+      "description": "One of the four progressive learning levels (Dasar, Berkembang, Lanjut, Mahir) per training.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "trainingId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "levelNumber": { "type": "integer" },
+        "title": { "type": "string", "maxLength": 160 },
+        "slug": { "type": "string", "enum": ["dasar", "berkembang", "lanjut", "mahir"] },
+        "description": { "type": "string", "maxLength": 1000 },
+        "learningObjectives": { "type": "string", "maxLength": 1500 },
+        "learningOutcomes": { "type": "string", "maxLength": 1500 },
+        "facilitatorUid": { "type": "string", "maxLength": 128 },
+        "facilitatorName": { "type": "string", "maxLength": 120 },
+        "durationHours": { "type": "number" },
+        "minQuizScore": { "type": "number" },
+        "minEvaluationScore": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "trainingId", "levelNumber", "title", "slug", "minQuizScore", "minEvaluationScore", "isActive", "createdAt", "updatedAt"]
+    },
+    "LearningMaterial": {
+      "title": "LearningMaterial",
+      "description": "Learning asset supporting text, PDF, PPT/PPTX, image, video, YouTube, external URL, and interactive URL.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "trainingId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "levelId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "levelNumber": { "type": "integer" },
+        "title": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "contentType": { "type": "string", "enum": ["teks", "pdf", "ppt", "gambar", "video", "youtube", "tautan", "interaktif"] },
+        "contentBody": { "type": "string", "maxLength": 15000 },
+        "fileUrl": { "type": "string", "maxLength": 1000 },
+        "fileName": { "type": "string", "maxLength": 255 },
+        "orderIndex": { "type": "integer" },
+        "durationMinutes": { "type": "integer" },
+        "isMandatory": { "type": "boolean" },
+        "isActive": { "type": "boolean" },
+        "allowDownload": { "type": "boolean" },
+        "isPrivateBucket": { "type": "boolean" },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "trainingId", "levelId", "levelNumber", "title", "contentType", "orderIndex", "durationMinutes", "isMandatory", "isActive", "createdBy", "createdAt", "updatedAt"]
+    },
+    "MaterialProgress": {
+      "title": "MaterialProgress",
+      "description": "Tracks participant completion and resume position per material.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "trainingId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "levelId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "levelNumber": { "type": "integer" },
+        "materialId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "status": { "type": "string", "enum": ["belum", "dipelajari", "selesai"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "trainingId", "levelId", "levelNumber", "materialId", "userId", "status", "createdAt", "updatedAt"]
+    },
+    "QuestionBank": {
+      "title": "QuestionBank",
+      "description": "Assessment, quiz, or evaluation definition without plaintext answer keys.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "trainingId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "levelNumber": { "type": "integer" },
+        "materialId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]*$" },
+        "kind": { "type": "string", "enum": ["assessment", "quiz", "evaluation"] },
+        "title": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "durationMinutes": { "type": "integer" },
+        "maxAttempts": { "type": "integer" },
+        "passingScore": { "type": "number" },
+        "shuffleQuestions": { "type": "boolean" },
+        "showExplanation": { "type": "boolean" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "trainingId", "levelNumber", "kind", "title", "durationMinutes", "maxAttempts", "passingScore", "isActive", "createdAt", "updatedAt"]
+    },
+    "AnswerKey": {
+      "title": "AnswerKey",
+      "description": "Protected answer keys and explanations strictly isolated from participants.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "trainingId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "kind": { "type": "string", "enum": ["assessment", "quiz", "evaluation"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "trainingId", "kind", "createdAt", "updatedAt"]
+    },
+    "Attempt": {
+      "title": "Attempt",
+      "description": "Immutable submission record for initial assessment, quiz, or final evaluation.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "trainingId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "bankId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "kind": { "type": "string", "enum": ["assessment", "quiz", "evaluation"] },
+        "levelNumber": { "type": "integer" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userName": { "type": "string", "maxLength": 120 },
+        "attemptNumber": { "type": "integer" },
+        "finalScore": { "type": "number" },
+        "percentage": { "type": "number" },
+        "passed": { "type": "boolean" },
+        "assignedLevel": { "type": "integer" },
+        "gradingStatus": { "type": "string", "enum": ["selesai", "menunggu_manual"] },
+        "feedback": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "trainingId", "bankId", "kind", "levelNumber", "userId", "userName", "attemptNumber", "finalScore", "percentage", "passed", "assignedLevel", "gradingStatus", "createdAt", "updatedAt"]
+    },
+    "Certificate": {
+      "title": "Certificate",
+      "description": "Unique digital certificate verifiable via public URL with minimal non-PII details.",
+      "type": "object",
+      "properties": {
+        "certificateNumber": { "type": "string", "maxLength": 80, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "trainingId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "trainingName": { "type": "string", "maxLength": 200 },
+        "organizer": { "type": "string", "maxLength": 160 },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "participantName": { "type": "string", "maxLength": 120 },
+        "completedLevel": { "type": "integer" },
+        "issuedDate": { "type": "string", "maxLength": 30 },
+        "signerName": { "type": "string", "maxLength": 120 },
+        "signerTitle": { "type": "string", "maxLength": 160 },
+        "status": { "type": "string", "enum": ["valid", "dicabut"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["certificateNumber", "trainingId", "trainingName", "organizer", "userId", "participantName", "completedLevel", "issuedDate", "signerName", "status", "createdAt"]
+    },
+    "ActivityLog": {
+      "title": "ActivityLog",
+      "description": "Append-only audit log for level progressions, admin overrides, grading, and account events.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "trainingId": { "type": "string", "maxLength": 128 },
+        "actorUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "actorName": { "type": "string", "maxLength": 120 },
+        "actorRole": { "type": "string", "maxLength": 40 },
+        "action": { "type": "string", "maxLength": 100 },
+        "targetType": { "type": "string", "maxLength": 60 },
+        "targetId": { "type": "string", "maxLength": 128 },
+        "details": { "type": "string", "maxLength": 1000 },
+        "overrideReason": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "actorUid", "actorName", "actorRole", "action", "targetType", "targetId", "details", "createdAt"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Training announcements published by admins or facilitators.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "trainingId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "maxLength": 200 },
+        "body": { "type": "string", "maxLength": 2000 },
+        "authorUid": { "type": "string", "maxLength": 128 },
+        "authorName": { "type": "string", "maxLength": 120 },
+        "isPublished": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "trainingId", "title", "body", "authorUid", "authorName", "isPublished", "createdAt", "updatedAt"]
+    },
+    "TrainingSchedule": {
+      "title": "TrainingSchedule",
+      "description": "Scheduled learning session or milestone belonging to a training program.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "trainingId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "levelNumber": { "type": "integer" },
+        "title": { "type": "string", "maxLength": 200 },
+        "sessionDate": { "type": "string", "maxLength": 30 },
+        "startTime": { "type": "string", "maxLength": 20 },
+        "endTime": { "type": "string", "maxLength": 20 },
+        "facilitatorName": { "type": "string", "maxLength": 120 },
+        "mode": { "type": "string", "enum": ["daring", "luring", "mandiri"] },
+        "locationOrUrl": { "type": "string", "maxLength": 500 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "trainingId", "levelNumber", "title", "sessionDate", "startTime", "endTime", "mode", "createdAt", "updatedAt"]
+    },
+    "FacilitatorNote": {
+      "title": "FacilitatorNote",
+      "description": "Mentoring notes and feedback posted by facilitators for participants or levels.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "trainingId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "levelNumber": { "type": "integer" },
+        "participantUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "participantName": { "type": "string", "maxLength": 120 },
+        "authorUid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorName": { "type": "string", "maxLength": 120 },
+        "content": { "type": "string", "maxLength": 1500 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "trainingId", "levelNumber", "participantUid", "participantName", "authorUid", "authorName", "content", "createdAt"]
+    },
+    "InstitutionSettings": {
+      "title": "InstitutionSettings",
+      "description": "Global institutional identity and LMS configuration editable by Super Admin.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 40 },
+        "appName": { "type": "string", "maxLength": 120 },
+        "tagline": { "type": "string", "maxLength": 200 },
+        "institutionName": { "type": "string", "maxLength": 180 },
+        "address": { "type": "string", "maxLength": 300 },
+        "website": { "type": "string", "maxLength": 200 },
+        "supportEmail": { "type": "string", "maxLength": 160 },
+        "certificatePrefix": { "type": "string", "maxLength": 30 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "appName", "tagline", "institutionName", "certificatePrefix", "updatedAt"]
+    },
+    "TaskSubmission": {
+      "title": "TaskSubmission",
+      "description": "Participant PID practical task artifact submission and facilitator 6-criteria rubric grading (1-4 scale).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "trainingId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "levelNumber": { "type": "integer" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userName": { "type": "string", "maxLength": 120 },
+        "title": { "type": "string", "minLength": 2, "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 3000 },
+        "productUrl": { "type": "string", "maxLength": 1000 },
+        "productFileName": { "type": "string", "maxLength": 255 },
+        "docMediaUrl": { "type": "string", "maxLength": 1000 },
+        "docMediaName": { "type": "string", "maxLength": 255 },
+        "status": { "type": "string", "enum": ["menunggu_penilaian", "lulus", "perlu_perbaikan"] },
+        "weightedScore": { "type": "number" },
+        "facilitatorFeedback": { "type": "string", "maxLength": 2000 },
+        "gradedBy": { "type": "string", "maxLength": 128 },
+        "gradedByName": { "type": "string", "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "trainingId", "levelNumber", "userId", "userName", "title", "description", "status", "weightedScore", "createdAt", "updatedAt"]
+    },
+    "LevelReflection": {
+      "title": "LevelReflection",
+      "description": "Participant learning reflection and school PID implementation plan per SAMR level.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "trainingId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "levelNumber": { "type": "integer" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userName": { "type": "string", "maxLength": 120 },
+        "learningExperience": { "type": "string", "maxLength": 2000 },
+        "challenges": { "type": "string", "maxLength": 2000 },
+        "competenciesGained": { "type": "string", "maxLength": 2000 },
+        "schoolImplementationPlan": { "type": "string", "maxLength": 2000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "trainingId", "levelNumber", "userId", "userName", "learningExperience", "schoolImplementationPlan", "createdAt", "updatedAt"]
+    },
+    "MaterialFile": {
+      "title": "MaterialFile",
+      "description": "Metadata header for chunked binary material files persisted in Firestore across container restarts.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fileName": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "mimeType": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "sizeBytes": { "type": "integer" },
+        "chunkCount": { "type": "integer" },
+        "uploadedBy": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "fileName", "mimeType", "sizeBytes", "chunkCount", "uploadedBy", "isActive", "createdAt"]
+    },
+    "MaterialFileChunk": {
+      "title": "MaterialFileChunk",
+      "description": "Single base64 chunk (<= 600KB) of a persisted MaterialFile.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fileId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "chunkIndex": { "type": "integer" },
+        "data": { "type": "string", "minLength": 1, "maxLength": 600000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "fileId", "chunkIndex", "data", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/profiles/{userId}": {
+      "schema": { "$ref": "#/entities/Profile" },
+      "description": "Private user profiles containing PII and role assignment."
+    },
+    "/public_profiles/{userId}": {
+      "schema": { "$ref": "#/entities/PublicProfile" },
+      "description": "Public directory of user display names and institutions without PII."
+    },
+    "/training_programs/{trainingId}": {
+      "schema": { "$ref": "#/entities/TrainingProgram" },
+      "description": "Training programs and configurable initial assessment score ranges."
+    },
+    "/training_enrollments/{enrollmentId}": {
+      "schema": { "$ref": "#/entities/TrainingEnrollment" },
+      "description": "Participant enrollments, level placement, and sequential progress."
+    },
+    "/learning_levels/{levelId}": {
+      "schema": { "$ref": "#/entities/LearningLevel" },
+      "description": "Four structured SAMR learning levels per training program."
+    },
+    "/learning_materials/{materialId}": {
+      "schema": { "$ref": "#/entities/LearningMaterial" },
+      "description": "Learning materials inside each level."
+    },
+    "/material_progress/{progressId}": {
+      "schema": { "$ref": "#/entities/MaterialProgress" },
+      "description": "Participant completion tracking per learning material."
+    },
+    "/question_banks/{bankId}": {
+      "schema": { "$ref": "#/entities/QuestionBank" },
+      "description": "Assessments, quizzes, and evaluations without plaintext answer keys."
+    },
+    "/answer_keys/{bankId}": {
+      "schema": { "$ref": "#/entities/AnswerKey" },
+      "description": "Restricted answer keys and scoring explanations inaccessible to participants."
+    },
+    "/attempts/{attemptId}": {
+      "schema": { "$ref": "#/entities/Attempt" },
+      "description": "Assessment, quiz, and evaluation attempts with auto and manual scores."
+    },
+    "/certificates/{certificateNumber}": {
+      "schema": { "$ref": "#/entities/Certificate" },
+      "description": "Digital certificates with public single-doc verification by unique number."
+    },
+    "/activity_logs/{logId}": {
+      "schema": { "$ref": "#/entities/ActivityLog" },
+      "description": "Immutable audit trail of system actions and admin overrides."
+    },
+    "/announcements/{announcementId}": {
+      "schema": { "$ref": "#/entities/Announcement" },
+      "description": "Announcements scoped to training programs."
+    },
+    "/training_schedules/{scheduleId}": {
+      "schema": { "$ref": "#/entities/TrainingSchedule" },
+      "description": "Training session schedules scoped to training programs."
+    },
+    "/facilitator_notes/{noteId}": {
+      "schema": { "$ref": "#/entities/FacilitatorNote" },
+      "description": "Facilitator learning notes and feedback for participants."
+    },
+    "/institution_settings/{settingId}": {
+      "schema": { "$ref": "#/entities/InstitutionSettings" },
+      "description": "Institutional branding and platform configuration."
+    },
+    "/task_submissions/{submissionId}": {
+      "schema": { "$ref": "#/entities/TaskSubmission" },
+      "description": "Participant PID practical task submissions and facilitator rubric grading."
+    },
+    "/level_reflections/{reflectionId}": {
+      "schema": { "$ref": "#/entities/LevelReflection" },
+      "description": "Participant per-level learning reflections and school implementation plans."
+    },
+    "/material_files/{fileId}": {
+      "schema": { "$ref": "#/entities/MaterialFile" },
+      "description": "Persistent cloud-stored metadata headers for uploaded learning material files."
+    },
+    "/material_files/{fileId}/chunks/{chunkId}": {
+      "schema": { "$ref": "#/entities/MaterialFileChunk" },
+      "description": "Immutable base64 chunks belonging to a persisted learning material file."
+    }
+  }
+}
